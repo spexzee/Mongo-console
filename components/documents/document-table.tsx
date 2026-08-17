@@ -6,6 +6,78 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from 'sonner'
 
+function formatCellValue(val: unknown): { display: string; type: 'date' | 'oid' | 'null' | 'bool' | 'text' | 'object' } {
+  if (val === null || val === undefined) {
+    return { display: 'null', type: 'null' }
+  }
+
+  if (typeof val === 'boolean') {
+    return { display: val ? 'true' : 'false', type: 'bool' }
+  }
+
+  if (typeof val === 'object') {
+    // EJSON Date: { $date: "2026-04-23T..." } or { $date: { $numberLong: "..." } }
+    if ('$date' in (val as Record<string, unknown>)) {
+      const dateVal = (val as { $date: string | number | { $numberLong: string } }).$date
+      const dateStr =
+        typeof dateVal === 'object' && dateVal && '$numberLong' in dateVal
+          ? Number(dateVal.$numberLong)
+          : (dateVal as string | number)
+      const d = new Date(dateStr)
+      if (!isNaN(d.getTime())) {
+        return {
+          display: d.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          }),
+          type: 'date',
+        }
+      }
+    }
+
+    // EJSON ObjectId: { $oid: "..." }
+    if ('$oid' in (val as Record<string, unknown>)) {
+      return { display: String((val as { $oid: string }).$oid), type: 'oid' }
+    }
+
+    // EJSON Decimal / Long / Int
+    if ('$numberDecimal' in (val as Record<string, unknown>)) {
+      return { display: String((val as { $numberDecimal: string }).$numberDecimal), type: 'text' }
+    }
+    if ('$numberLong' in (val as Record<string, unknown>)) {
+      return { display: String((val as { $numberLong: string }).$numberLong), type: 'text' }
+    }
+
+    return { display: JSON.stringify(val), type: 'object' }
+  }
+
+  // If plain ISO Date string
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+    const d = new Date(val)
+    if (!isNaN(d.getTime())) {
+      return {
+        display: d.toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        }),
+        type: 'date',
+      }
+    }
+  }
+
+  return { display: String(val), type: 'text' }
+}
+
 export function DocumentTable({
   documents,
   viewMode,
@@ -97,14 +169,14 @@ export function DocumentTable({
   documents.forEach((d) => {
     Object.keys(d).forEach((k) => keysSet.add(k))
   })
-  const columns = Array.from(keysSet).slice(0, 7) // Show top 7 columns
+  const columns = Array.from(keysSet).slice(0, 8) // Show top 8 columns
 
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden bg-card">
       <Table>
         <TableHeader className="bg-muted/40">
           <TableRow>
-            <TableHead className="w-[100px] text-xs font-mono">_id</TableHead>
+            <TableHead className="w-[120px] text-xs font-mono">_id</TableHead>
             {columns
               .filter((c) => c !== '_id')
               .map((c) => (
@@ -120,7 +192,7 @@ export function DocumentTable({
             const rawId = doc._id?.$oid || doc._id || `doc-${idx}`
             return (
               <TableRow key={rawId} className="hover:bg-muted/30 font-mono text-xs">
-                <TableCell className="font-semibold text-primary truncate max-w-[120px]">
+                <TableCell className="font-semibold text-primary truncate max-w-[130px]" title={String(rawId)}>
                   {String(rawId)}
                 </TableCell>
 
@@ -128,15 +200,22 @@ export function DocumentTable({
                   .filter((c) => c !== '_id')
                   .map((c) => {
                     const val = doc[c]
-                    const formatted =
-                      val === null
-                        ? 'null'
-                        : typeof val === 'object'
-                        ? JSON.stringify(val)
-                        : String(val)
+                    const { display, type } = formatCellValue(val)
                     return (
-                      <TableCell key={c} className="truncate max-w-[180px] text-muted-foreground">
-                        {formatted}
+                      <TableCell
+                        key={c}
+                        className={`truncate max-w-[200px] ${
+                          type === 'date'
+                            ? 'text-sky-400 font-sans text-[11px] font-medium'
+                            : type === 'null'
+                            ? 'text-muted-foreground/50 italic'
+                            : type === 'bool'
+                            ? 'text-amber-500 font-semibold'
+                            : 'text-muted-foreground'
+                        }`}
+                        title={display}
+                      >
+                        {display}
                       </TableCell>
                     )
                   })}
