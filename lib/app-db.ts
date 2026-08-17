@@ -31,9 +31,13 @@ function appDbName(uri: string): string {
 }
 
 async function connect(): Promise<MongoClient> {
-  const client = new MongoClient(appUri(), {
-    serverSelectionTimeoutMS: 12_000,
+  const uri = appUri()
+  const client = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 15_000,
+    connectTimeoutMS: 15_000,
     appName: 'mongo-console-app',
+    tls: uri.includes('+srv') || uri.includes('tls=true') || uri.includes('ssl=true') ? true : undefined,
+    tlsAllowInvalidCertificates: false,
   })
   await client.connect()
   return client
