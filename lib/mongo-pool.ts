@@ -29,10 +29,12 @@ export async function getClient(uri: string): Promise<MongoClient> {
     return existing.client
   }
   const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 12_000,
-    connectTimeoutMS: 12_000,
+    serverSelectionTimeoutMS: 15_000,
+    connectTimeoutMS: 15_000,
     maxPoolSize: 10,
     appName: 'mongo-console',
+    tls: uri.includes('+srv') || uri.includes('tls=true') || uri.includes('ssl=true') ? true : undefined,
+    tlsAllowInvalidCertificates: false,
   })
   await client.connect()
   pool.set(uri, { client, lastUsed: Date.now() })
@@ -45,10 +47,12 @@ export async function withTempClient<T>(
   fn: (client: MongoClient) => Promise<T>,
 ): Promise<T> {
   const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 8_000,
-    connectTimeoutMS: 8_000,
+    serverSelectionTimeoutMS: 15_000,
+    connectTimeoutMS: 15_000,
     maxPoolSize: 2,
     appName: 'mongo-console-test',
+    tls: uri.includes('+srv') || uri.includes('tls=true') || uri.includes('ssl=true') ? true : undefined,
+    tlsAllowInvalidCertificates: false,
   })
   try {
     await client.connect()

@@ -37,6 +37,13 @@ export function describeError(error: unknown): { message: string; status: number
     if (/not authorized|Unauthorized|requires authentication/i.test(message)) {
       return { message: `Not authorized: ${message}`, status: 403 }
     }
+    if (/SSL alert|tlsv1 alert|certificate|tls/i.test(message)) {
+      return {
+        message:
+          'SSL/TLS handshake error. Ensure your connection string includes `retryWrites=true&w=majority` and that your current IP address is whitelisted in MongoDB Atlas Network Access (0.0.0.0/0).',
+        status: 502,
+      }
+    }
     return { message, status: 400 }
   }
   return { message: String(error), status: 500 }
