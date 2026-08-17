@@ -295,8 +295,18 @@ export function parseRelaxed<T = unknown>(src: string, fallback?: T): T {
     if (fallback !== undefined) return fallback
     throw new ParseError('Expected a JSON value but received an empty string.')
   }
+
+  // 1. First attempt standard EJSON.parse directly in case it's already valid strict JSON or EJSON
   try {
-    return EJSON.parse(toStrictJson(trimmed)) as T
+    return EJSON.parse(trimmed) as T
+  } catch {
+    // Continue to relaxed tokenization
+  }
+
+  // 2. Rewrite relaxed JS/shell notation (unquoted keys, single quotes, ObjectId(), etc.)
+  try {
+    const strict = toStrictJson(trimmed)
+    return EJSON.parse(strict) as T
   } catch (error) {
     if (error instanceof ParseError) throw error
     throw new ParseError(
