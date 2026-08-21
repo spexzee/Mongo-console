@@ -43,13 +43,15 @@ export function toBackupSummary(doc: BackupDoc): BackupSummary {
 
 /** Reads a database into the app store as a restorable snapshot. */
 export async function createBackup(options: {
+  userId?: string
+  userName?: string
   connectionId: string
   database: string
   collections?: string[]
   label?: string
   scheduled?: boolean
 }): Promise<BackupSummary> {
-  const connection = await resolveConnection(options.connectionId)
+  const connection = await resolveConnection(options.connectionId, options.userId)
   const client = await getClient(connection.uri)
   const db = client.db(options.database)
 
@@ -85,6 +87,7 @@ export async function createBackup(options: {
 
   const col = await backupsCol()
   const doc: BackupDoc = {
+    userId: options.userId,
     label:
       options.label?.trim() ||
       `${options.database} · ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
@@ -107,6 +110,8 @@ export async function createBackup(options: {
 
   const result = await col.insertOne(doc)
   await logAudit({
+    userId: options.userId,
+    userName: options.userName,
     connectionId: connection.id,
     connectionName: connection.name,
     action: options.scheduled ? 'backup.scheduled' : 'backup.create',
@@ -119,13 +124,15 @@ export async function createBackup(options: {
 
 /** Writes a stored snapshot back into a database. */
 export async function restoreBackup(options: {
+  userId?: string
+  userName?: string
   backup: BackupDoc
   connectionId: string
   database: string
   collections?: string[]
   mode: 'append' | 'overwrite' | 'upsert'
 }) {
-  const connection = await resolveConnection(options.connectionId)
+  const connection = await resolveConnection(options.connectionId, options.userId)
   assertWritable(connection, 'restore')
   const client = await getClient(connection.uri)
   const db = client.db(options.database)
@@ -172,6 +179,8 @@ export async function restoreBackup(options: {
 
   const restored = summary.reduce((total, row) => total + row.restored, 0)
   await logAudit({
+    userId: options.userId,
+    userName: options.userName,
     connectionId: connection.id,
     connectionName: connection.name,
     action: 'backup.restore',

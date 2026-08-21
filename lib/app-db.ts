@@ -7,6 +7,7 @@ import type {
   FavoriteDoc,
   QueryHistoryDoc,
   SavedQueryDoc,
+  UserDoc,
 } from './types'
 
 const globalStore = globalThis as unknown as {
@@ -55,6 +56,11 @@ export async function appDb(): Promise<Db> {
   return client.db(appDbName(appUri()))
 }
 
+export async function usersCol(): Promise<Collection<UserDoc>> {
+  const db = await appDb()
+  return db.collection<UserDoc>('users')
+}
+
 export async function connectionsCol(): Promise<Collection<ConnectionDoc>> {
   const db = await appDb()
   return db.collection<ConnectionDoc>('connections')
@@ -95,7 +101,8 @@ let indexesEnsured = false
 /** Creates the indexes the console relies on. Safe to call repeatedly. */
 export async function ensureAppIndexes() {
   if (indexesEnsured) return
-  const [connections, history, saved, audit, favorites, backups, schedules] = await Promise.all([
+  const [users, connections, history, saved, audit, favorites, backups, schedules] = await Promise.all([
+    usersCol(),
     connectionsCol(),
     historyCol(),
     savedQueriesCol(),
@@ -105,20 +112,21 @@ export async function ensureAppIndexes() {
     schedulesCol(),
   ])
   await Promise.all([
-    connections.createIndex({ name: 1 }, { unique: true }),
+    users.createIndex({ email: 1 }, { unique: true }),
+    connections.createIndex({ userId: 1, name: 1 }),
+    connections.createIndex({ userId: 1, lastUsedAt: -1 }),
     connections.createIndex({ lastUsedAt: -1 }),
-    history.createIndex({ createdAt: -1 }),
+    history.createIndex({ userId: 1, createdAt: -1 }),
     history.createIndex({ connectionId: 1, createdAt: -1 }),
-    saved.createIndex({ name: 1 }, { unique: true }),
-    audit.createIndex({ createdAt: -1 }),
+    saved.createIndex({ userId: 1, name: 1 }),
+    audit.createIndex({ userId: 1, createdAt: -1 }),
     audit.createIndex({ connectionId: 1, createdAt: -1 }),
     favorites.createIndex(
-      { connectionId: 1, database: 1, collection: 1 },
-      { unique: true },
+      { userId: 1, connectionId: 1, database: 1, collection: 1 },
     ),
-    backups.createIndex({ createdAt: -1 }),
+    backups.createIndex({ userId: 1, createdAt: -1 }),
     backups.createIndex({ connectionId: 1, database: 1, createdAt: -1 }),
-    schedules.createIndex({ nextRunAt: 1 }),
+    schedules.createIndex({ userId: 1, nextRunAt: 1 }),
   ]).catch(() => {
     // Index creation is best-effort; a read-only app database should not break the console.
   })

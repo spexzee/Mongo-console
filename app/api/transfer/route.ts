@@ -1,5 +1,6 @@
 import { getClient } from '@/lib/mongo-pool'
 import { describeError, fail } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { assertWritable, logAudit, resolveConnection } from '@/lib/server/connections'
 import { copyDocuments } from '@/lib/server/operations'
 
@@ -21,6 +22,13 @@ type TransferEvent =
  * client can render live progress without a socket server.
  */
 export async function POST(request: Request) {
+  let user: { id: string; email: string; name: string }
+  try {
+    user = await requireAuth(request)
+  } catch (err) {
+    return fail((err as Error).message || 'Unauthorized', 401)
+  }
+
   let body: {
     sourceConnectionId?: string
     sourceDatabase?: string
@@ -65,8 +73,8 @@ export async function POST(request: Request) {
 
       try {
         const [source, target] = await Promise.all([
-          resolveConnection(sourceConnectionId),
-          resolveConnection(targetConnectionId),
+          resolveConnection(sourceConnectionId, user.id),
+          resolveConnection(targetConnectionId, user.id),
         ])
         sourceName = source.name
         targetName = target.name

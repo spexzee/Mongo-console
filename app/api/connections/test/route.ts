@@ -1,5 +1,6 @@
 import { withTempClient } from '@/lib/mongo-pool'
 import { describeError, fail, ok, route } from '@/lib/server/api'
+import { getAuthUser } from '@/lib/server/auth'
 import { resolveConnection } from '@/lib/server/connections'
 import { uriHost } from '@/lib/crypto'
 
@@ -9,11 +10,12 @@ export const dynamic = 'force-dynamic'
 /** Tests a URI (or an existing profile) and reports server details plus latency. */
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await getAuthUser(request)
     const body = (await request.json()) as { uri?: string; connectionId?: string }
 
     let uri = body.uri?.trim()
     if (!uri && body.connectionId) {
-      uri = (await resolveConnection(body.connectionId)).uri
+      uri = (await resolveConnection(body.connectionId, user?.id)).uri
     }
     if (!uri) return fail('Provide a connection URI or an existing profile id.')
     if (!/^mongodb(\+srv)?:\/\//i.test(uri)) {

@@ -1,5 +1,6 @@
 import { backupsCol, ensureAppIndexes, schedulesCol } from '@/lib/app-db'
 import { fail, ok, route } from '@/lib/server/api'
+import { getAuthUser, requireAuth } from '@/lib/server/auth'
 import { createBackup } from '@/lib/server/backups'
 import { objectId, resolveConnection } from '@/lib/server/connections'
 import type { BackupScheduleDoc } from '@/lib/types'
@@ -11,6 +12,7 @@ export const maxDuration = 300
 function toSummary(doc: BackupScheduleDoc) {
   return {
     id: String(doc._id),
+    userId: doc.userId,
     label: doc.label,
     connectionId: doc.connectionId,
     connectionName: doc.connectionName,
@@ -27,11 +29,17 @@ function toSummary(doc: BackupScheduleDoc) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     await ensureAppIndexes()
     const col = await schedulesCol()
-    const docs = await col.find({}).sort({ createdAt: -1 }).toArray()
+    const docs = await col
+      .find({
+        $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+      } as any)
+      .sort({ createdAt: -1 })
+      .toArray()
     return ok(docs.map(toSummary))
   })
 }
@@ -51,17 +59,7 @@ export async function POST(request: Request) {
     }
     const col = await schedulesCol()
 
-    if (body.action === 'toggle') {
-      if (!body.id) return fail('An `id` is required.')
-      await col.updateOne(
-        { _id: objectId(body.id) },
-        { $set: { enabled: Boolean(body.enabled) } },
-      )
-      return ok({ id: body.id, enabled: Boolean(body.enabled) })
-    }
-
-    // Runs every schedule whose next run time has passed. Call from an external cron
-    // (Vercel Cron, GitHub Actions, or any scheduler) to drive scheduled backups.
+    // Runs every schedule whose next run time has passed. Call from external cron.
     if (body.action === 'runDue') {
       const now = new Date()
       const due = await col.find({ enabled: true, nextRunAt: { $lte: now } }).toArray()
@@ -71,6 +69,7 @@ export async function POST(request: Request) {
         const everyHours = Math.max(schedule.everyHours, 1)
         try {
           await createBackup({
+            userId: schedule.userId,
             connectionId: schedule.connectionId,
             database: schedule.database,
             collections: schedule.collections,
@@ -120,12 +119,27 @@ export async function POST(request: Request) {
       return ok({ ran: results.length, results })
     }
 
+    const user = await requireAuth(request)
+
+    if (body.action === 'toggle') {
+      if (!body.id) return fail('An `id` is required.')
+      await col.updateOne(
+        {
+          _id: objectId(body.id),
+          $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+        } as any,
+        { $set: { enabled: Boolean(body.enabled) } },
+      )
+      return ok({ id: body.id, enabled: Boolean(body.enabled) })
+    }
+
     if (!body.connectionId) return fail('Choose a connection.')
     if (!body.database) return fail('Choose a database.')
-    const connection = await resolveConnection(body.connectionId)
+    const connection = await resolveConnection(body.connectionId, user.id)
     const everyHours = Math.min(Math.max(Number(body.everyHours ?? 24), 1), 24 * 30)
 
     const doc: BackupScheduleDoc = {
+      userId: user.id,
       label: body.label?.trim() || `${body.database} every ${everyHours}h`,
       connectionId: connection.id,
       connectionName: connection.name,
@@ -144,10 +158,14 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const id = new URL(request.url).searchParams.get('id')
     if (!id) return fail('An `id` is required.')
     const col = await schedulesCol()
-    await col.deleteOne({ _id: objectId(id) })
+    await col.deleteOne({
+      _id: objectId(id),
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
     return ok({ deleted: id })
   })
 }

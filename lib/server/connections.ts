@@ -14,6 +14,7 @@ export type ResolvedConnection = {
 export function toSummary(doc: ConnectionDoc): ConnectionSummary {
   return {
     id: String(doc._id),
+    userId: doc.userId,
     name: doc.name,
     host: doc.host,
     uriRedacted: doc.uriRedacted,
@@ -32,11 +33,16 @@ export function objectId(id: string): ObjectId {
 }
 
 /** Loads a saved connection and decrypts its URI for server-side use only. */
-export async function resolveConnection(id: string): Promise<ResolvedConnection> {
+export async function resolveConnection(id: string, userId?: string): Promise<ResolvedConnection> {
   await ensureAppIndexes()
   const col = await connectionsCol()
-  const doc = await col.findOne({ _id: objectId(id) })
-  if (!doc) throw new Error('Connection profile not found.')
+  const query: Record<string, unknown> = { _id: objectId(id) }
+  if (userId) {
+    // Only allow owner, or legacy unassigned connections
+    query.$or = [{ userId }, { userId: { $exists: false } }, { userId: null }]
+  }
+  const doc = await col.findOne(query as any)
+  if (!doc) throw new Error('Connection profile not found or access denied.')
   void col.updateOne({ _id: doc._id }, { $set: { lastUsedAt: new Date() } }).catch(() => {})
   return {
     id: String(doc._id),
@@ -87,6 +93,8 @@ export function assertWritable(connection: ResolvedConnection, operation: string
 }
 
 export async function logAudit(entry: {
+  userId?: string
+  userName?: string
   connectionId?: string
   connectionName?: string
   action: string
@@ -99,6 +107,8 @@ export async function logAudit(entry: {
   try {
     const col = await auditCol()
     await col.insertOne({
+      userId: entry.userId,
+      userName: entry.userName,
       connectionId: entry.connectionId,
       connectionName: entry.connectionName,
       action: entry.action,

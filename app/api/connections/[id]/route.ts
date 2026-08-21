@@ -2,6 +2,7 @@ import { connectionsCol, favoritesCol } from '@/lib/app-db'
 import { decryptSecret, encryptSecret, redactUri, uriHost } from '@/lib/crypto'
 import { evict } from '@/lib/mongo-pool'
 import { fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { logAudit, objectId, toSummary } from '@/lib/server/connections'
 import type { ConnectionDoc } from '@/lib/types'
 
@@ -10,18 +11,23 @@ export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ id: string }> }
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   return route(async () => {
+    const user = await requireAuth(request)
     const { id } = await params
     const col = await connectionsCol()
-    const doc = await col.findOne({ _id: objectId(id) })
-    if (!doc) return fail('Connection profile not found.', 404)
+    const doc = await col.findOne({
+      _id: objectId(id),
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
+    if (!doc) return fail('Connection profile not found or access denied.', 404)
     return ok(toSummary(doc))
   })
 }
 
 export async function PATCH(request: Request, { params }: Params) {
   return route(async () => {
+    const user = await requireAuth(request)
     const { id } = await params
     const body = (await request.json()) as Partial<{
       name: string
@@ -33,14 +39,21 @@ export async function PATCH(request: Request, { params }: Params) {
     }>
 
     const col = await connectionsCol()
-    const current = await col.findOne({ _id: objectId(id) })
-    if (!current) return fail('Connection profile not found.', 404)
+    const current = await col.findOne({
+      _id: objectId(id),
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
+    if (!current) return fail('Connection profile not found or access denied.', 404)
 
     const update: Partial<ConnectionDoc> = {}
     if (body.name !== undefined) {
       const name = body.name.trim()
       if (!name) return fail('A profile name is required.')
-      const clash = await col.findOne({ name, _id: { $ne: current._id } })
+      const clash = await col.findOne({
+        name,
+        _id: { $ne: current._id },
+        $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+      } as any)
       if (clash) return fail(`A profile named “${name}” already exists.`, 409)
       update.name = name
     }
@@ -61,10 +74,17 @@ export async function PATCH(request: Request, { params }: Params) {
     if (body.readOnly !== undefined) update.readOnly = Boolean(body.readOnly)
     if (body.notes !== undefined) update.notes = body.notes.trim() || undefined
 
+    // Ensure connection is assigned to this user if it was unassigned
+    if (!current.userId) {
+      update.userId = user.id
+    }
+
     await col.updateOne({ _id: current._id }, { $set: update })
     const updated = await col.findOne({ _id: current._id })
 
     await logAudit({
+      userId: user.id,
+      userName: user.name,
       connectionId: id,
       connectionName: updated?.name,
       action: 'connection.update',
@@ -78,12 +98,16 @@ export async function PATCH(request: Request, { params }: Params) {
   })
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   return route(async () => {
+    const user = await requireAuth(request)
     const { id } = await params
     const col = await connectionsCol()
-    const doc = await col.findOne({ _id: objectId(id) })
-    if (!doc) return fail('Connection profile not found.', 404)
+    const doc = await col.findOne({
+      _id: objectId(id),
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
+    if (!doc) return fail('Connection profile not found or access denied.', 404)
 
     await evict(decryptSecret(doc.uriEncrypted)).catch(() => {})
     await col.deleteOne({ _id: doc._id })
@@ -91,6 +115,8 @@ export async function DELETE(_request: Request, { params }: Params) {
     await favorites.deleteMany({ connectionId: id }).catch(() => {})
 
     await logAudit({
+      userId: user.id,
+      userName: user.name,
       connectionId: id,
       connectionName: doc.name,
       action: 'connection.delete',

@@ -4,6 +4,7 @@ import { getClient } from '@/lib/mongo-pool'
 import { parseRelaxed } from '@/lib/mongo-shell'
 import { flatten, toNdjson } from '@/lib/ejson'
 import { fail, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { logAudit, resolveConnection } from '@/lib/server/connections'
 
 export const runtime = 'nodejs'
@@ -55,6 +56,7 @@ async function readCollection(
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const body = (await request.json()) as {
       connectionId?: string
       database?: string
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
     if (!body.connectionId) return fail('A `connectionId` is required.')
     if (!body.database) return fail('A `database` is required.')
 
-    const connection = await resolveConnection(body.connectionId)
+    const connection = await resolveConnection(body.connectionId, user.id)
     const client = await getClient(connection.uri)
     const db = client.db(body.database)
     const filter = body.filter?.trim() ? parseRelaxed<Document>(body.filter, {}) : {}

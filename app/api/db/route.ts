@@ -3,6 +3,7 @@ import type { Document } from 'mongodb'
 import { getClient, poolSize } from '@/lib/mongo-pool'
 import { parseRelaxed } from '@/lib/mongo-shell'
 import { fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { assertWritable, logAudit, resolveConnection } from '@/lib/server/connections'
 import {
   analyzeSchema,
@@ -37,6 +38,7 @@ function asBsonValue(input: unknown): unknown {
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const body = (await request.json()) as Record<string, unknown> & {
       connectionId?: string
       action?: string
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
     if (!action) return fail('An `action` is required.')
     if (!body.connectionId) return fail('A `connectionId` is required.')
 
-    const connection = await resolveConnection(body.connectionId)
+    const connection = await resolveConnection(body.connectionId, user.id)
     const client = await getClient(connection.uri)
 
     const dbName = typeof body.database === 'string' ? body.database : undefined
@@ -63,6 +65,8 @@ export async function POST(request: Request) {
     const write = () => assertWritable(connection, action)
     const audit = (entry: { action: string; target: string; detail?: string; destructive?: boolean }) =>
       logAudit({
+        userId: user.id,
+        userName: user.name,
         connectionId: connection.id,
         connectionName: connection.name,
         ...entry,

@@ -16,8 +16,12 @@ import {
   Layers,
   TableProperties,
   Plus,
-  ExternalLink
+  ExternalLink,
+  LogOut,
+  User,
+  Shield,
 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { useConnections } from '@/hooks/use-connections'
 import { useDatabases } from '@/hooks/use-databases'
 import { useCollections } from '@/hooks/use-collections'
@@ -70,6 +74,7 @@ export function AppSidebar() {
     return null
   }, [pathname, connections])
 
+  const { user, logout } = useAuth()
   const currentConn =
     connections.find((c: ConnectionSummary) => c.id === (routeConnId || connParam)) ||
     connections[0]
@@ -96,6 +101,8 @@ export function AppSidebar() {
   const selectConnection = (id: string) => {
     router.push(`/explorer/${id}`)
   }
+
+  const userInitial = (user?.name || user?.email || 'U').charAt(0).toUpperCase()
 
   return (
     <Sidebar className="border-r border-border bg-sidebar/70 backdrop-blur">
@@ -288,8 +295,61 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-border/50 text-xs text-muted-foreground">
-        <div className="flex items-center justify-between">
+      <SidebarFooter className="p-3 border-t border-border/50 text-xs text-muted-foreground space-y-2">
+        {/* User Profile Card / Menu */}
+        {user && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start p-1.5 h-auto hover:bg-accent/80 rounded-lg border border-border/40 bg-card/40 text-left"
+                />
+              }
+            >
+              <div className="flex items-center gap-2.5 w-full min-w-0">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-600 text-white font-bold text-xs shadow-xs">
+                  {userInitial}
+                </div>
+                <div className="flex-1 min-w-0 leading-tight">
+                  <div className="font-medium text-xs text-foreground truncate">
+                    {user.name}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {user.email}
+                  </div>
+                </div>
+                <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="text-xs font-normal">
+                <div className="font-medium text-foreground">{user.name}</div>
+                <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                render={
+                  <Link href="/connections" className="flex items-center gap-2 text-xs" />
+                }
+              >
+                <Shield className="h-3.5 w-3.5 text-emerald-500" />
+                My Private Profiles
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => logout()}
+                className="flex items-center gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-[11px] font-mono">Connected</span>

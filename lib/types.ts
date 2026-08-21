@@ -1,7 +1,31 @@
 import type { ObjectId } from 'mongodb'
 
+export type UserDoc = {
+  _id?: ObjectId
+  email: string
+  name: string
+  passwordHash: string
+  salt: string
+  createdAt: Date
+  lastLoginAt?: Date
+}
+
+export type AuthUser = {
+  id: string
+  email: string
+  name: string
+}
+
+export type UserSummary = {
+  id: string
+  email: string
+  name: string
+  createdAt: string
+}
+
 export type ConnectionDoc = {
   _id?: ObjectId
+  userId?: string
   name: string
   /** AES-256-GCM encrypted connection URI. Never returned to the client. */
   uriEncrypted: string
@@ -21,6 +45,7 @@ export type ConnectionDoc = {
 /** Shape sent to the browser — never contains the URI or credentials. */
 export type ConnectionSummary = {
   id: string
+  userId?: string
   name: string
   host: string
   uriRedacted: string
@@ -34,6 +59,7 @@ export type ConnectionSummary = {
 
 export type QueryHistoryDoc = {
   _id?: ObjectId
+  userId?: string
   connectionId: string
   connectionName: string
   database: string
@@ -49,6 +75,7 @@ export type QueryHistoryDoc = {
 
 export type SavedQueryDoc = {
   _id?: ObjectId
+  userId?: string
   name: string
   description?: string
   connectionId?: string
@@ -60,6 +87,8 @@ export type SavedQueryDoc = {
 
 export type AuditLogDoc = {
   _id?: ObjectId
+  userId?: string
+  userName?: string
   connectionId?: string
   connectionName?: string
   action: string
@@ -73,6 +102,7 @@ export type AuditLogDoc = {
 
 export type FavoriteDoc = {
   _id?: ObjectId
+  userId?: string
   connectionId: string
   connectionName: string
   database: string
@@ -82,6 +112,7 @@ export type FavoriteDoc = {
 
 export type BackupDoc = {
   _id?: ObjectId
+  userId?: string
   label: string
   connectionId: string
   connectionName: string
@@ -97,6 +128,7 @@ export type BackupDoc = {
 
 export type BackupScheduleDoc = {
   _id?: ObjectId
+  userId?: string
   label: string
   connectionId: string
   connectionName: string

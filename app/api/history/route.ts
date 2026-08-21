@@ -1,21 +1,32 @@
 import { ensureAppIndexes, historyCol } from '@/lib/app-db'
 import { ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     await ensureAppIndexes()
     const url = new URL(request.url)
     const connectionId = url.searchParams.get('connectionId')
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 50), 1), 200)
     const col = await historyCol()
+
+    const query: Record<string, unknown> = {
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    }
+    if (connectionId) {
+      query.connectionId = connectionId
+    }
+
     const docs = await col
-      .find(connectionId ? { connectionId } : {})
+      .find(query as any)
       .sort({ createdAt: -1 })
       .limit(limit)
       .toArray()
+
     return ok(
       docs.map((doc) => ({
         id: String(doc._id),
@@ -37,9 +48,18 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const connectionId = new URL(request.url).searchParams.get('connectionId')
     const col = await historyCol()
-    const result = await col.deleteMany(connectionId ? { connectionId } : {})
+
+    const query: Record<string, unknown> = {
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    }
+    if (connectionId) {
+      query.connectionId = connectionId
+    }
+
+    const result = await col.deleteMany(query as any)
     return ok({ deletedCount: result.deletedCount })
   })
 }

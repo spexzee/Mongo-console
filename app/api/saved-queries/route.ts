@@ -1,5 +1,6 @@
 import { ensureAppIndexes, savedQueriesCol } from '@/lib/app-db'
 import { fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { objectId } from '@/lib/server/connections'
 import type { SavedQueryDoc } from '@/lib/types'
 
@@ -19,17 +20,25 @@ function toSummary(doc: SavedQueryDoc) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     await ensureAppIndexes()
     const col = await savedQueriesCol()
-    const docs = await col.find({}).sort({ createdAt: -1 }).limit(200).toArray()
+    const docs = await col
+      .find({
+        $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+      } as any)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .toArray()
     return ok(docs.map(toSummary))
   })
 }
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     await ensureAppIndexes()
     const body = (await request.json()) as Partial<{
       name: string
@@ -46,12 +55,16 @@ export async function POST(request: Request) {
     if (!command) return fail('The query cannot be empty.')
 
     const col = await savedQueriesCol()
-    const existing = await col.findOne({ name })
+    const existing = await col.findOne({
+      name,
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
     if (existing) {
       await col.updateOne(
         { _id: existing._id },
         {
           $set: {
+            userId: user.id,
             description: body.description?.trim(),
             connectionId: body.connectionId,
             database: body.database,
@@ -65,6 +78,7 @@ export async function POST(request: Request) {
     }
 
     const doc: SavedQueryDoc = {
+      userId: user.id,
       name,
       description: body.description?.trim(),
       connectionId: body.connectionId,
@@ -80,10 +94,14 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const id = new URL(request.url).searchParams.get('id')
     if (!id) return fail('An `id` is required.')
     const col = await savedQueriesCol()
-    await col.deleteOne({ _id: objectId(id) })
+    await col.deleteOne({
+      _id: objectId(id),
+      $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+    } as any)
     return ok({ deleted: id })
   })
 }

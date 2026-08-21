@@ -2,6 +2,7 @@ import { EJSON } from 'bson'
 import type { Db, Document } from 'mongodb'
 import { getClient } from '@/lib/mongo-pool'
 import { fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { assertWritable, logAudit, resolveConnection } from '@/lib/server/connections'
 
 export const runtime = 'nodejs'
@@ -168,6 +169,7 @@ async function writeDocs(
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const contentType = request.headers.get('content-type') ?? ''
     let connectionId: string | undefined
     let database: string | undefined
@@ -202,7 +204,7 @@ export async function POST(request: Request) {
     if (!database) return fail('A target database is required.')
     if (!text.trim()) return fail('The import payload is empty.')
 
-    const connection = await resolveConnection(connectionId)
+    const connection = await resolveConnection(connectionId, user.id)
     assertWritable(connection, 'import')
     const client = await getClient(connection.uri)
     const db = client.db(database)

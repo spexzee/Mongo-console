@@ -13,8 +13,14 @@ export function fail(message: string, status = 400, extra?: Record<string, unkno
 /** Converts driver / parser errors into a friendly message and status code. */
 export function describeError(error: unknown): { message: string; status: number } {
   if (isParseError(error)) return { message: error.message, status: 400 }
+  if (error && typeof error === 'object' && 'name' in error && error.name === 'AuthError') {
+    return { message: (error as Error).message || 'Unauthorized', status: 401 }
+  }
   if (error instanceof Error) {
     const message = error.message
+    if (/Please sign in|Unauthorized|Not authorized/i.test(message)) {
+      return { message, status: 401 }
+    }
     if (/APP_MONGODB_URI|APP_ENCRYPTION_KEY/.test(message)) {
       return { message, status: 500 }
     }

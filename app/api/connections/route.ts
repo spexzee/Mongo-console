@@ -1,6 +1,7 @@
 import { connectionsCol, ensureAppIndexes } from '@/lib/app-db'
 import { encryptSecret, redactUri, uriHost } from '@/lib/crypto'
 import { fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import { logAudit, toSummary } from '@/lib/server/connections'
 import type { ConnectionDoc } from '@/lib/types'
 
@@ -9,17 +10,25 @@ export const dynamic = 'force-dynamic'
 
 const COLORS = ['amber', 'teal', 'violet', 'rose', 'lime', 'sky']
 
-export async function GET() {
+export async function GET(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     await ensureAppIndexes()
     const col = await connectionsCol()
-    const docs = await col.find({}).sort({ lastUsedAt: -1, createdAt: -1 }).toArray()
+    // Find connections owned by this user or unassigned legacy connections
+    const docs = await col
+      .find({
+        $or: [{ userId: user.id }, { userId: { $exists: false } }, { userId: null }],
+      } as any)
+      .sort({ lastUsedAt: -1, createdAt: -1 })
+      .toArray()
     return ok(docs.map(toSummary))
   })
 }
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const body = (await request.json()) as {
       name?: string
       uri?: string
@@ -41,10 +50,14 @@ export async function POST(request: Request) {
     await ensureAppIndexes()
     const col = await connectionsCol()
 
-    const existing = await col.findOne({ name })
-    if (existing) return fail(`A profile named “${name}” already exists.`, 409)
+    const existing = await col.findOne({
+      name,
+      $or: [{ userId: user.id }, { userId: { $exists: false } }],
+    } as any)
+    if (existing) return fail(`A profile named “${name}” already exists in your account.`, 409)
 
     const doc: ConnectionDoc = {
+      userId: user.id,
       name,
       uriEncrypted: encryptSecret(uri),
       host: uriHost(uri),
@@ -58,6 +71,8 @@ export async function POST(request: Request) {
 
     const result = await col.insertOne(doc)
     await logAudit({
+      userId: user.id,
+      userName: user.name,
       connectionId: String(result.insertedId),
       connectionName: name,
       action: 'connection.create',

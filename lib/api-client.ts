@@ -14,6 +14,20 @@ export async function fetchJson<T = any>(url: string, options?: RequestInit): Pr
 }
 
 export const api = {
+  auth: {
+    me: () => fetchJson<{ user: { id: string; email: string; name: string; createdAt: string } }>('/api/auth/me'),
+    login: (data: { email: string; password: string }) =>
+      fetchJson<{ user: { id: string; email: string; name: string } }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    register: (data: { name: string; email: string; password: string }) =>
+      fetchJson<{ user: { id: string; email: string; name: string } }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    logout: () => fetchJson<{ message: string }>('/api/auth/logout', { method: 'POST' }),
+  },
   connections: {
     list: () => fetchJson('/api/connections'),
     create: (data: any) => fetchJson('/api/connections', { method: 'POST', body: JSON.stringify(data) }),

@@ -2,6 +2,7 @@ import { historyCol } from '@/lib/app-db'
 import { getClient } from '@/lib/mongo-pool'
 import { parseCommand } from '@/lib/mongo-shell'
 import { describeError, fail, ok, route } from '@/lib/server/api'
+import { requireAuth } from '@/lib/server/auth'
 import {
   assertWritable,
   isMutatingOperation,
@@ -16,6 +17,7 @@ export const maxDuration = 60
 
 export async function POST(request: Request) {
   return route(async () => {
+    const user = await requireAuth(request)
     const body = (await request.json()) as {
       connectionId?: string
       database?: string
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
     const source = body.command?.trim()
     if (!source) return fail('Enter a command to run.')
 
-    const connection = await resolveConnection(body.connectionId)
+    const connection = await resolveConnection(body.connectionId, user.id)
     const client = await getClient(connection.uri)
     const db = client.db(body.database)
 
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
       const history = await historyCol()
       await history
         .insertOne({
+          userId: user.id,
           connectionId: connection.id,
           connectionName: connection.name,
           database: body.database,
@@ -59,6 +62,8 @@ export async function POST(request: Request) {
 
       if (isMutatingOperation(command.operation)) {
         await logAudit({
+          userId: user.id,
+          userName: user.name,
           connectionId: connection.id,
           connectionName: connection.name,
           action: `query.${command.operation}`,
@@ -80,6 +85,7 @@ export async function POST(request: Request) {
       const history = await historyCol()
       await history
         .insertOne({
+          userId: user.id,
           connectionId: connection.id,
           connectionName: connection.name,
           database: body.database,
