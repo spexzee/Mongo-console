@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/shell/app-sidebar'
+import { ShellHeader } from '@/components/shell/shell-header'
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +11,10 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
           <AppSidebar />
         </Suspense>
         <SidebarInset className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {children}
+          <ShellHeader />
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {children}
+          </div>
         </SidebarInset>
       </div>
     </SidebarProvider>

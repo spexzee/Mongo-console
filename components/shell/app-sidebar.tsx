@@ -20,6 +20,7 @@ import {
   LogOut,
   User,
   Shield,
+  X,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useConnections } from '@/hooks/use-connections'
@@ -40,6 +41,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -58,7 +60,14 @@ export function AppSidebar() {
   const searchParams = useSearchParams()
   const connParam = searchParams.get('conn')
   
+  const { isMobile, setOpenMobile } = useSidebar()
   const { connections } = useConnections()
+
+  const closeOnMobile = () => {
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }
 
   // Match active connection from URL route if present (/explorer/[connId] or /[connId]/[db]/[col])
   const routeConnId = React.useMemo(() => {
@@ -99,6 +108,7 @@ export function AppSidebar() {
   }
 
   const selectConnection = (id: string) => {
+    closeOnMobile()
     router.push(`/explorer/${id}`)
   }
 
@@ -108,17 +118,35 @@ export function AppSidebar() {
     <Sidebar className="border-r border-border bg-sidebar/70 backdrop-blur">
       <SidebarHeader className="p-3 border-b border-border/50">
         <div className="flex items-center justify-between gap-2 mb-2">
-          <Link href="/connections" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-xs">
+          <Link
+            href="/connections"
+            onClick={closeOnMobile}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white font-bold text-xs shadow-xs">
               M
             </div>
             <div className="font-semibold text-sm tracking-tight text-sidebar-foreground">
               Mongo Console
             </div>
           </Link>
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 uppercase font-mono tracking-wider">
-            v1.0
-          </Badge>
+
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 uppercase font-mono tracking-wider">
+              v1.0
+            </Badge>
+            {isMobile && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setOpenMobile(false)}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close sidebar</span>
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Connection Selector Dropdown */}
@@ -166,7 +194,7 @@ export function AppSidebar() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               render={
-                <Link href="/connections" className="flex items-center gap-2 text-xs" />
+                <Link href="/connections" onClick={closeOnMobile} className="flex items-center gap-2 text-xs" />
               }
             >
               <Plus className="h-3.5 w-3.5" />
@@ -188,7 +216,10 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   isActive={pathname.startsWith('/explorer') || (pathname.split('/').filter(Boolean).length >= 3 && !pathname.startsWith('/query') && !pathname.startsWith('/indexes') && !pathname.startsWith('/schema') && !pathname.startsWith('/backups'))}
                   render={
-                    <Link href={currentConnId ? `/explorer/${currentConnId}` : '/connections'} />
+                    <Link
+                      href={currentConnId ? `/explorer/${currentConnId}` : '/connections'}
+                      onClick={closeOnMobile}
+                    />
                   }
                 >
                   <FolderTree className="h-4 w-4" />
@@ -200,7 +231,10 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   isActive={pathname.startsWith('/query')}
                   render={
-                    <Link href={currentConnId ? `/query/${currentConnId}` : '/connections'} />
+                    <Link
+                      href={currentConnId ? `/query/${currentConnId}` : '/connections'}
+                      onClick={closeOnMobile}
+                    />
                   }
                 >
                   <Terminal className="h-4 w-4" />
@@ -212,7 +246,10 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   isActive={pathname.startsWith('/backups')}
                   render={
-                    <Link href={currentConnId ? `/backups/${currentConnId}` : '/connections'} />
+                    <Link
+                      href={currentConnId ? `/backups/${currentConnId}` : '/connections'}
+                      onClick={closeOnMobile}
+                    />
                   }
                 >
                   <Archive className="h-4 w-4" />
@@ -223,7 +260,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname.startsWith('/transfer')}
-                  render={<Link href="/transfer" />}
+                  render={<Link href="/transfer" onClick={closeOnMobile} />}
                 >
                   <ArrowLeftRight className="h-4 w-4" />
                   <span>Transfer / Import</span>
@@ -238,7 +275,11 @@ export function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupLabel className="text-[10px] font-semibold text-muted-foreground tracking-wider uppercase flex justify-between items-center">
               <span>Databases</span>
-              <Link href={`/explorer/${currentConnId}`} className="hover:text-foreground">
+              <Link
+                href={`/explorer/${currentConnId}`}
+                onClick={closeOnMobile}
+                className="hover:text-foreground"
+              >
                 <Layers className="h-3.5 w-3.5 opacity-60 hover:opacity-100" />
               </Link>
             </SidebarGroupLabel>
@@ -257,6 +298,7 @@ export function AppSidebar() {
                       dbName={db.name}
                       isOpen={!!openDbs[db.name]}
                       onToggle={() => toggleDb(db.name)}
+                      onSelect={closeOnMobile}
                     />
                   ))
                 )}
@@ -275,7 +317,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === '/history'}
-                  render={<Link href="/history" />}
+                  render={<Link href="/history" onClick={closeOnMobile} />}
                 >
                   <History className="h-4 w-4" />
                   <span>History & Audit</span>
@@ -284,7 +326,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === '/saved'}
-                  render={<Link href="/saved" />}
+                  render={<Link href="/saved" onClick={closeOnMobile} />}
                 >
                   <Bookmark className="h-4 w-4" />
                   <span>Saved Queries</span>
@@ -331,7 +373,7 @@ export function AppSidebar() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 render={
-                  <Link href="/connections" className="flex items-center gap-2 text-xs" />
+                  <Link href="/connections" onClick={closeOnMobile} className="flex items-center gap-2 text-xs" />
                 }
               >
                 <Shield className="h-3.5 w-3.5 text-emerald-500" />
@@ -339,7 +381,10 @@ export function AppSidebar() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => logout()}
+                onClick={() => {
+                  closeOnMobile()
+                  logout()
+                }}
                 className="flex items-center gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -372,11 +417,13 @@ function DbTreeItem({
   dbName,
   isOpen,
   onToggle,
+  onSelect,
 }: {
   connId: string
   dbName: string
   isOpen: boolean
   onToggle: () => void
+  onSelect?: () => void
 }) {
   const { collections, isLoading } = useCollections(connId, isOpen ? dbName : null)
   const pathname = usePathname()
@@ -414,7 +461,13 @@ function DbTreeItem({
                 <SidebarMenuSubItem key={col.name}>
                   <SidebarMenuSubButton
                     isActive={isActive}
-                    render={<Link href={path} className="flex items-center gap-2 text-xs font-mono" />}
+                    render={
+                      <Link
+                        href={path}
+                        onClick={onSelect}
+                        className="flex items-center gap-2 text-xs font-mono"
+                      />
+                    }
                   >
                     <TableProperties className="h-3 w-3 text-muted-foreground" />
                     <span className="truncate">{col.name}</span>
