@@ -244,12 +244,14 @@ export function toStrictJson(src: string): string {
       continue
     }
 
-    if (IDENT_START.test(c)) {
+    // Words, numbers, identifiers, object keys, hex strings, constructors
+    if (IDENT_START.test(c) || /[0-9]/.test(c) || (c === '-' && /[0-9]/.test(src[i + 1] ?? ''))) {
       let j = i
+      if (c === '-') j++
       while (j < n && IDENT_PART.test(src[j])) j++
-      const ident = src.slice(i, j)
+      const token = src.slice(i, j)
 
-      if (ident === 'new') {
+      if (token === 'new') {
         i = j
         continue
       }
@@ -257,26 +259,37 @@ export function toStrictJson(src: string): string {
       let k = j
       while (k < n && WS.test(src[k])) k++
 
+      // Constructor call, e.g. ObjectId("...") or ISODate("...")
       if (src[k] === '(') {
         const { inner, next } = readParens(src, k)
-        out += ctorToJson(ident, inner)
+        out += ctorToJson(token, inner)
         i = next
         continue
       }
 
+      // Object key, e.g. name: or _id: or 123:
       if (src[k] === ':') {
-        out += JSON.stringify(ident)
+        out += JSON.stringify(token)
         i = j
         continue
       }
 
-      if (ident === 'true' || ident === 'false' || ident === 'null') {
-        out += ident
+      // Boolean / null literal
+      if (token === 'true' || token === 'false' || token === 'null') {
+        out += token
         i = j
         continue
       }
 
-      out += JSON.stringify(ident)
+      // Valid numeric literal
+      if (/^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(token)) {
+        out += token
+        i = j
+        continue
+      }
+
+      // Unquoted identifier / string / hex value
+      out += JSON.stringify(token)
       i = j
       continue
     }

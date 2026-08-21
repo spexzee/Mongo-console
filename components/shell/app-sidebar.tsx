@@ -21,6 +21,7 @@ import {
   User,
   Shield,
   X,
+  Loader2,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useConnections } from '@/hooks/use-connections'
@@ -439,19 +440,25 @@ function DbTreeItem({
             <Database className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="truncate">{dbName}</span>
           </div>
-          {isOpen ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isOpen && isLoading && (
+              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            )}
+            {isOpen ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            )}
+          </div>
         </SidebarMenuButton>
       </div>
 
       {isOpen && (
         <SidebarMenuSub>
           {isLoading ? (
-            <div className="space-y-1 py-1 px-3">
-              <div className="h-4 w-20 rounded bg-muted/40 animate-pulse" />
+            <div className="flex items-center gap-2 py-1.5 px-2.5 text-[11px] text-muted-foreground font-sans bg-muted/20 rounded-md my-0.5 animate-pulse">
+              <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+              <span>Loading collections...</span>
             </div>
           ) : (
             collections.map((col: CollectionInfo) => {

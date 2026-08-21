@@ -1,5 +1,5 @@
 import { EJSON } from 'bson'
-import type { Document } from 'mongodb'
+import { ObjectId, type Document } from 'mongodb'
 import { getClient, poolSize } from '@/lib/mongo-pool'
 import { parseRelaxed } from '@/lib/mongo-shell'
 import { fail, ok, route } from '@/lib/server/api'
@@ -24,15 +24,48 @@ function asBson(input: unknown, fallback: Document = {}): Document {
   if (typeof input === 'string') {
     const trimmed = input.trim()
     if (!trimmed) return fallback
-    return parseRelaxed<Document>(trimmed, fallback)
+    try {
+      const parsed = parseRelaxed<unknown>(trimmed, fallback)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Document
+      }
+      return fallback
+    } catch {
+      try {
+        return EJSON.parse(trimmed) as Document
+      } catch (e) {
+        throw new Error(`Invalid JSON document: ${(e as Error).message}`)
+      }
+    }
   }
-  if (typeof input === 'object') return EJSON.deserialize(input as never) as Document
+  if (typeof input === 'object') {
+    if (Array.isArray(input)) return fallback
+    return EJSON.deserialize(input as never) as Document
+  }
   throw new Error('Expected a JSON document.')
 }
 
 function asBsonValue(input: unknown): unknown {
-  if (typeof input === 'string') return parseRelaxed(input)
-  if (input && typeof input === 'object') return EJSON.deserialize(input as never)
+  if (input === undefined || input === null) return input
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    if (!trimmed) return trimmed
+    if (/^[0-9a-fA-F]{24}$/.test(trimmed)) {
+      try {
+        return new ObjectId(trimmed)
+      } catch {
+        // Fallback
+      }
+    }
+    try {
+      return parseRelaxed(trimmed)
+    } catch {
+      return trimmed
+    }
+  }
+  if (input && typeof input === 'object') {
+    return EJSON.deserialize(input as never)
+  }
   return input
 }
 
@@ -280,9 +313,20 @@ export async function POST(request: Request) {
         write()
         const document = asBson(body.document)
         const { _id, ...rest } = document
-        const id = body.id !== undefined ? asBsonValue(body.id) : _id
+        let id: unknown = _id
+        if (id === undefined && body.id !== undefined) {
+          id = asBsonValue(body.id)
+        }
         if (id === undefined) return fail('The document must include an `_id` to be replaced.')
-        const result = await requireCollection().replaceOne({ _id: id as never }, rest)
+
+        let query: Document = { _id: id as never }
+        if (typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id)) {
+          query = { _id: { $in: [id, new ObjectId(id)] } }
+        } else if (id instanceof ObjectId) {
+          query = { _id: { $in: [id, id.toHexString()] } }
+        }
+
+        const result = await requireCollection().replaceOne(query, rest)
         await audit({
           action: 'document.replace',
           target: `${dbName}.${collectionName}`,

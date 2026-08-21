@@ -13,7 +13,11 @@ import {
   CheckSquare,
   Square,
   Sparkles,
-  Layers
+  Layers,
+  PlusCircle,
+  FolderInput,
+  FolderPlus,
+  RefreshCw
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
@@ -47,16 +51,29 @@ export default function TransferImportPage() {
 
   const [targetConn, setTargetConn] = React.useState('')
   const [targetDb, setTargetDb] = React.useState('')
+  const [isCustomTargetDb, setIsCustomTargetDb] = React.useState(false)
+  const [customTargetDbName, setCustomTargetDbName] = React.useState('')
 
   const [mode, setMode] = React.useState<'append' | 'overwrite' | 'upsert'>('append')
   const [isTransferring, setIsTransferring] = React.useState(false)
   const [progressLog, setProgressLog] = React.useState<string[]>([])
   const [currentProgress, setCurrentProgress] = React.useState<{ copied: number; total: number; col: string } | null>(null)
 
-  const { databases: sourceDbs, isLoading: sourceDbsLoading } = useDatabases(sourceConn)
+  // Initialize connection defaults
+  React.useEffect(() => {
+    if (connections.length > 0) {
+      if (!sourceConn) setSourceConn(connections[0].id)
+      if (!targetConn) setTargetConn(connections[0].id)
+    }
+  }, [connections, sourceConn, targetConn])
+
+  const { databases: sourceDbs, isLoading: sourceDbsLoading, mutate: mutateSourceDbs } = useDatabases(sourceConn)
   const { collections: sourceCols, isLoading: sourceColsLoading } = useCollections(sourceConn, sourceDb)
 
-  const { databases: targetDbs, isLoading: targetDbsLoading } = useDatabases(targetConn)
+  const { databases: targetDbs, isLoading: targetDbsLoading, mutate: mutateTargetDbs } = useDatabases(targetConn)
+
+  // Effective target database name
+  const effectiveTargetDb = isCustomTargetDb ? customTargetDbName.trim() : targetDb
 
   // Toggle collection selection
   const toggleCol = (colName: string) => {
@@ -90,10 +107,24 @@ export default function TransferImportPage() {
     }
   }, [sourceDb, sourceCols])
 
+  // Is self-transfer into the same database?
+  const isSameDbTransfer = Boolean(
+    sourceConn &&
+      targetConn &&
+      sourceConn === targetConn &&
+      sourceDb &&
+      effectiveTargetDb &&
+      sourceDb === effectiveTargetDb
+  )
+
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sourceConn || !sourceDb || !targetConn || !targetDb) {
+    if (!sourceConn || !sourceDb || !targetConn || !effectiveTargetDb) {
       toast.error('Please select both source and target connections and databases')
+      return
+    }
+    if (isSameDbTransfer) {
+      toast.error('Source and target databases cannot be the same. Please choose a different target database.')
       return
     }
     if (selectedCols.length === 0) {
@@ -113,7 +144,7 @@ export default function TransferImportPage() {
           sourceConnectionId: sourceConn,
           sourceDatabase: sourceDb,
           targetConnectionId: targetConn,
-          targetDatabase: targetDb,
+          targetDatabase: effectiveTargetDb,
           collections: selectedCols,
           mode,
         }),
@@ -143,25 +174,26 @@ export default function TransferImportPage() {
           try {
             const event = JSON.parse(line)
             if (event.type === 'start') {
-              setProgressLog((prev) => [...prev, `🚀 Starting migration: ${event.collections.length} collections`])
+              setProgressLog((prev) => [...prev, `🚀 Starting migration: ${event.collections.length} collection(s) → ${effectiveTargetDb}`])
             } else if (event.type === 'collection-start') {
               setCurrentProgress({ copied: 0, total: 100, col: event.collection })
-              setProgressLog((prev) => [...prev, `📦 [${event.index}/${event.total}] Copying "${event.collection}"...`])
+              setProgressLog((prev) => [...prev, `📦 [${event.index}/${event.total}] Copying collection "${event.collection}"...`])
             } else if (event.type === 'progress') {
               setCurrentProgress({ copied: event.copied, total: event.total, col: event.collection })
             } else if (event.type === 'collection-done') {
               setProgressLog((prev) => [
                 ...prev,
-                `✓ "${event.collection}": ${event.copied} copied${event.skipped ? `, ${event.skipped} skipped` : ''}`,
+                `✓ "${event.collection}": ${event.copied} docs transferred${event.skipped ? `, ${event.skipped} skipped` : ''}`,
               ])
             } else if (event.type === 'log') {
               setProgressLog((prev) => [...prev, `⚠️ ${event.message}`])
             } else if (event.type === 'done') {
               setProgressLog((prev) => [
                 ...prev,
-                `🎉 Transfer completed in ${Math.round(event.durationMs / 1000)}s! Total: ${event.copied} docs.`,
+                `🎉 Transfer completed in ${Math.round(event.durationMs / 1000)}s! Total: ${event.copied} docs transferred into ${effectiveTargetDb}.`,
               ])
-              toast.success(`Transfer completed (${event.copied} documents)`)
+              toast.success(`Transfer completed (${event.copied} documents into ${effectiveTargetDb})`)
+              mutateTargetDbs()
             } else if (event.type === 'error') {
               setProgressLog((prev) => [...prev, `❌ Error: ${event.message}`])
               toast.error(event.message)
@@ -180,6 +212,8 @@ export default function TransferImportPage() {
   }
 
   const allSelected = selectedCols.length === sourceCols.length && sourceCols.length > 0
+  const selectedSourceConn = connections.find((c) => c.id === sourceConn)
+  const selectedTargetConn = connections.find((c) => c.id === targetConn)
 
   return (
     <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
@@ -198,7 +232,7 @@ export default function TransferImportPage() {
             Data Transfer & Import / Export
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Migrate entire databases or selected collections across MongoDB instances with real-time progress.
+            Migrate entire databases or selected collections across databases and MongoDB instances.
           </p>
         </div>
       </div>
@@ -216,7 +250,7 @@ export default function TransferImportPage() {
         <TabsContent value="transfer" className="mt-4 space-y-6">
           <form onSubmit={handleTransfer}>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Source Box */}
+              {/* 1. Source Box */}
               <Card className="flex flex-col justify-between shadow-sm">
                 <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
@@ -233,11 +267,19 @@ export default function TransferImportPage() {
                   <CardDescription>Select the origin cluster and collections to replicate.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Source Connection */}
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Source Connection</Label>
                     <Select value={sourceConn} onValueChange={(val: string | null) => setSourceConn(val || '')} required>
                       <SelectTrigger className="text-xs">
-                        <SelectValue placeholder="Select Source Connection" />
+                        {selectedSourceConn ? (
+                          <div className="flex items-center gap-2 truncate">
+                            <span className={`h-2 w-2 rounded-full bg-${selectedSourceConn.color}-500 shrink-0`} />
+                            <span className="truncate">{selectedSourceConn.name}</span>
+                          </div>
+                        ) : (
+                          <SelectValue placeholder="Select Source Connection" />
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         {connections.map((c: ConnectionSummary) => (
@@ -252,16 +294,37 @@ export default function TransferImportPage() {
                     </Select>
                   </div>
 
+                  {/* Source Database */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium">Source Database</Label>
-                    <Select value={sourceDb} onValueChange={(val: string | null) => setSourceDb(val || '')} disabled={!sourceConn || sourceDbsLoading} required>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">Source Database</Label>
+                      {sourceConn && (
+                        <button
+                          type="button"
+                          onClick={() => mutateSourceDbs()}
+                          className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+                        >
+                          <RefreshCw className={`h-2.5 w-2.5 ${sourceDbsLoading ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </button>
+                      )}
+                    </div>
+                    <Select
+                      value={sourceDb}
+                      onValueChange={(val: string | null) => setSourceDb(val || '')}
+                      disabled={!sourceConn || sourceDbsLoading}
+                      required
+                    >
                       <SelectTrigger className="text-xs font-mono">
                         <SelectValue placeholder={sourceDbsLoading ? "Loading databases..." : "Select Database"} />
                       </SelectTrigger>
                       <SelectContent>
                         {sourceDbs.map((d: DatabaseInfo) => (
                           <SelectItem key={d.name} value={d.name} className="text-xs font-mono">
-                            {d.name}
+                            <div className="flex items-center gap-2">
+                              <Database className="h-3 w-3 text-muted-foreground" />
+                              <span>{d.name}</span>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -272,7 +335,7 @@ export default function TransferImportPage() {
                   {sourceDb && (
                     <div className="space-y-2 pt-2 border-t border-border/40">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs font-semibold">Collections to Transfer</Label>
+                        <Label className="text-xs font-semibold">Collections to Transfer ({selectedCols.length}/{sourceCols.length})</Label>
                         <Button
                           type="button"
                           variant="ghost"
@@ -296,10 +359,10 @@ export default function TransferImportPage() {
                         <div className="h-28 rounded-lg border border-border/40 bg-card/40 animate-pulse" />
                       ) : sourceCols.length === 0 ? (
                         <div className="p-4 text-center rounded border border-dashed text-xs text-muted-foreground">
-                          No collections found in this database.
+                          No collections found in database &quot;{sourceDb}&quot;.
                         </div>
                       ) : (
-                        <div className="max-h-48 overflow-y-auto rounded-lg border border-border/60 p-2 space-y-1 bg-muted/20">
+                        <div className="max-h-56 overflow-y-auto rounded-lg border border-border/60 p-2 space-y-1 bg-muted/20">
                           {sourceCols.map((col: CollectionInfo) => {
                             const isChecked = selectedCols.includes(col.name)
                             return (
@@ -330,21 +393,38 @@ export default function TransferImportPage() {
                 </CardContent>
               </Card>
 
-              {/* Target Box */}
+              {/* 2. Target Box */}
               <Card className="flex flex-col justify-between shadow-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-base flex items-center gap-2">
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">2</span>
                     Target Destination
                   </CardTitle>
-                  <CardDescription>Select destination MongoDB cluster and target database name.</CardDescription>
+                  <CardDescription>
+                    Select destination MongoDB cluster and target database (e.g. school-db-demo).
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Target Connection */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium">Target Connection</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">Target Connection</Label>
+                      {sourceConn === targetConn && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          Same Connection
+                        </Badge>
+                      )}
+                    </div>
                     <Select value={targetConn} onValueChange={(val: string | null) => setTargetConn(val || '')} required>
                       <SelectTrigger className="text-xs">
-                        <SelectValue placeholder="Select Target Connection" />
+                        {selectedTargetConn ? (
+                          <div className="flex items-center gap-2 truncate">
+                            <span className={`h-2 w-2 rounded-full bg-${selectedTargetConn.color}-500 shrink-0`} />
+                            <span className="truncate">{selectedTargetConn.name}</span>
+                          </div>
+                        ) : (
+                          <SelectValue placeholder="Select Target Connection" />
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         {connections.map((c: ConnectionSummary) => (
@@ -360,22 +440,96 @@ export default function TransferImportPage() {
                     </Select>
                   </div>
 
+                  {/* Target Database Selection with Dropdown / New DB mode */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium">Target Database Name</Label>
-                    <Input
-                      placeholder="e.g. staging_db, replicated_prod"
-                      value={targetDb}
-                      onChange={(e) => setTargetDb(e.target.value)}
-                      className="font-mono text-xs"
-                      required
-                    />
-                    {targetDbs.some((d: DatabaseInfo) => d.name === targetDb) && (
-                      <p className="text-[11px] text-amber-500 font-sans">
-                        Target database already exists. Collections will be created or merged inside it.
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">Target Database</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsCustomTargetDb(!isCustomTargetDb)}
+                        className="h-6 text-[11px] px-1.5 text-primary hover:text-primary/80 gap-1"
+                      >
+                        {isCustomTargetDb ? (
+                          <>
+                            <Database className="h-3 w-3" /> Choose from existing DBs
+                          </>
+                        ) : (
+                          <>
+                            <FolderPlus className="h-3 w-3" /> + Create new DB
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {isCustomTargetDb ? (
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="e.g. school-db-demo, staging_db"
+                          value={customTargetDbName}
+                          onChange={(e) => setCustomTargetDbName(e.target.value)}
+                          className="font-mono text-xs"
+                          required
+                          autoFocus
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Enter the name of the new database to create.
+                        </p>
+                      </div>
+                    ) : (
+                      <Select
+                        value={targetDb}
+                        onValueChange={(val: string | null) => setTargetDb(val || '')}
+                        disabled={!targetConn || targetDbsLoading}
+                        required
+                      >
+                        <SelectTrigger className="text-xs font-mono">
+                          <SelectValue placeholder={targetDbsLoading ? "Loading databases..." : "Choose Target Database (e.g. school-db-demo)"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {targetDbs.map((d: DatabaseInfo) => {
+                            const isCurrentSource = sourceConn === targetConn && d.name === sourceDb
+                            return (
+                              <SelectItem
+                                key={d.name}
+                                value={d.name}
+                                className="text-xs font-mono"
+                                disabled={isCurrentSource}
+                              >
+                                <div className="flex items-center justify-between w-full gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <Database className="h-3 w-3 text-muted-foreground" />
+                                    <span>{d.name}</span>
+                                  </div>
+                                  {isCurrentSource && (
+                                    <span className="text-[10px] text-amber-500 font-sans italic">
+                                      (Current source)
+                                    </span>
+                                  )}
+                                </div>
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {isSameDbTransfer && (
+                      <div className="flex items-center gap-1.5 p-2 rounded-md bg-destructive/10 text-destructive text-xs">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>Source and target database are identical. Please choose a different target DB (e.g. school-db-demo).</span>
+                      </div>
+                    )}
+
+                    {!isCustomTargetDb && effectiveTargetDb && !isSameDbTransfer && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Selected collections will be copied into <strong className="text-foreground font-mono">{effectiveTargetDb}</strong>.
                       </p>
                     )}
                   </div>
 
+                  {/* Transfer Mode */}
                   <div className="p-4 rounded-lg bg-muted/30 border border-border/40 space-y-2">
                     <Label className="text-xs font-semibold">Transfer Mode</Label>
                     <Select value={mode} onValueChange={(v: 'append' | 'overwrite' | 'upsert' | null) => setMode(v || 'append')}>
@@ -384,13 +538,13 @@ export default function TransferImportPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="append">
-                          Append (keep existing, skip duplicates)
+                          Append (keep existing documents, skip duplicates)
                         </SelectItem>
                         <SelectItem value="upsert">
-                          Upsert (replace matching _id, add new)
+                          Upsert (replace matching _id, insert new documents)
                         </SelectItem>
                         <SelectItem value="overwrite">
-                          Overwrite (truncate collection first)
+                          Overwrite (clear target collection first)
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -403,23 +557,25 @@ export default function TransferImportPage() {
             <Card className="mt-6 shadow-sm border-primary/20">
               <CardFooter className="py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-xs text-muted-foreground">
-                  {selectedCols.length > 0 ? (
+                  {selectedCols.length > 0 && effectiveTargetDb && !isSameDbTransfer ? (
                     <span>
-                      Ready to transfer <strong className="text-foreground">{selectedCols.length}</strong> collection(s) into <code className="text-primary font-mono">{targetDb || '...'}</code>
+                      Ready to transfer <strong className="text-foreground">{selectedCols.length}</strong> collection(s) from <code className="text-primary font-mono">{sourceDb}</code> into <code className="text-emerald-500 font-bold font-mono">{effectiveTargetDb}</code>
                     </span>
+                  ) : isSameDbTransfer ? (
+                    <span className="text-destructive">Please select a different target database.</span>
                   ) : (
-                    <span>Select collections from the source database to proceed.</span>
+                    <span>Select collections from the source database and choose a target database to proceed.</span>
                   )}
                 </div>
 
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={isTransferring || selectedCols.length === 0 || !targetDb.trim()}
+                  disabled={isTransferring || selectedCols.length === 0 || !effectiveTargetDb.trim() || isSameDbTransfer}
                   className="gap-2 px-6"
                 >
                   <ArrowRight className={`h-4 w-4 ${isTransferring ? 'animate-pulse' : ''}`} />
-                  {isTransferring ? 'Replicating Data...' : `Start Transfer (${selectedCols.length})`}
+                  {isTransferring ? 'Replicating Data...' : `Start Transfer (${selectedCols.length} collections)`}
                 </Button>
               </CardFooter>
             </Card>

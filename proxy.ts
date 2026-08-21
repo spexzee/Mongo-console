@@ -5,7 +5,7 @@ const AUTH_COOKIE_NAME = 'mongo_console_session'
 // Public routes that unauthenticated users can access
 const PUBLIC_PATHS = ['/login', '/register', '/api/auth/login', '/api/auth/register']
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value
 
